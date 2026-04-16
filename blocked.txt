@@ -1,0 +1,4 @@
+# blocked domains / IPs / websites - one entry per line
+# example: example.com
+# example: 1.2.3.4
+# example: facebook.com

@@ -1,0 +1,4 @@
+# Client IP blacklist - one IP per line
+# example: 192.168.1.10
+# example: 192.0.0.*
+# example: 10.0.0.1
