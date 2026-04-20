@@ -1,13 +1,10 @@
-# proxy-server
-This is a proxy server for windows and linux. You can have username and password. You can also block websites and use ip_blacklist ip_whitelist for clients
-
 # Proxy Server
 
 This project is a small proxy server implementation that works on both Windows and Linux.
 
 ## Features
 
-- Supports username/password authentication for proxy clients
+- Supports username/password authentication for proxy clients (can be enabled/disabled)
 - Supports IP whitelist and blacklist for client access control
 - Supports wildcard IP patterns like `*.*.*.*`, `192.*.*.*`, `192.0.*.*`, `192.0.0.*`, `46.15.*.*`
 - Periodically enforces whitelist/blacklist rules on connected clients
@@ -29,7 +26,7 @@ This project is a small proxy server implementation that works on both Windows a
 2. Add allowed client IPs to `ip_whitelist.txt` or blocked IPs to `ip_blacklist.txt`.
 3. Add blocked websites to `blocked.txt`.
 4. Start the proxy server.
-5. Use commands like `enableipwhite`, `disableipwhite`, `enableipblack`, `disableipblack`, `setstats <s>` and `setkick <s>`.
+5. Use commands like `enableipwhite`, `disableipwhite`, `enableipblack`, `disableipblack`, `enableauth`, `disableauth`, `setstats <s>` and `setkick <s>`.
 
 ## Notes
 
