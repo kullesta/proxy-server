@@ -10,7 +10,7 @@ If you discover a security issue in this project, please report it privately and
 
 ## Security Considerations
 
-- The proxy requires configuration for username/password authentication. Ensure credentials are strong and changed regularly.
+- The proxy supports username/password authentication, which can be enabled or disabled via `auth_enabled` in `config.ini`. Ensure credentials are strong and changed regularly when enabled.
 - The whitelist and blacklist functionality is based on IP address patterns. Do not rely on this as a substitute for secure authentication.
 - Blocked host filtering is simple and may not catch all variants of a website or URL.
 - Do not expose the proxy directly to untrusted public networks unless properly secured.
