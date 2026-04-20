@@ -5,7 +5,7 @@ This proxy server provides a simple HTTP/HTTPS proxy with authentication,
 host blocking, and client IP blacklist/whitelist support.
 
 Configuration files and runtime files:
-  config.ini       - proxy settings (username, password, bind IP, port, status interval)
+  config.ini       - proxy settings (username, password, auth enabled, bind IP, port, status interval)
   proxy.log         - runtime log file with timestamps
   blocked.txt       - blocked host/domain list
   ip_blacklist.txt  - blocked client IP list (supports wildcard patterns)
@@ -27,6 +27,8 @@ Command examples:
   disableipblack     - disable client IP blacklist checking
   enableipwhite      - enable client IP whitelist checking
   disableipwhite     - disable client IP whitelist checking
+  enableauth         - enable proxy authentication
+  disableauth        - disable proxy authentication
   setstats <seconds> - set stats refresh interval
   reload             - reload configuration and lists from disk
   resetconfig        - reset settings and lists to default values
