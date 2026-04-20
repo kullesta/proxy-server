@@ -58,6 +58,7 @@ static int statusReloadSec = 10; // default 10 seconds
 static int ipCheckIntervalSec = 1; // default 1 second
 static int ipBlacklistEnabled = 0;
 static int ipWhitelistEnabled = 0;
+static int authEnabled = 1; // default true
 static volatile int running = 1;
 static volatile int commandReady = 0;
 static char commandBuffer[256];
@@ -260,7 +261,7 @@ static void createReadmeFile(void) {
     fprintf(f, "This proxy server provides a simple HTTP/HTTPS proxy with authentication,\n");
     fprintf(f, "host blocking, and client IP blacklist/whitelist support.\n\n");
     fprintf(f, "Configuration files and runtime files:\n");
-    fprintf(f, "  config.ini       - proxy settings (username, password, bind IP, port, status interval)\n");
+    fprintf(f, "  config.ini       - proxy settings (username, password, auth enabled, bind IP, port, status interval)\n");
     fprintf(f, "  proxy.log         - runtime log file with timestamps\n");
     fprintf(f, "  blocked.txt       - blocked host/domain list\n");
     fprintf(f, "  ip_blacklist.txt  - blocked client IP list (supports wildcard patterns)\n");
@@ -281,6 +282,8 @@ static void createReadmeFile(void) {
     fprintf(f, "  disableipblack     - disable client IP blacklist checking\n");
     fprintf(f, "  enableipwhite      - enable client IP whitelist checking\n");
     fprintf(f, "  disableipwhite     - disable client IP whitelist checking\n");
+    fprintf(f, "  enableauth         - enable proxy authentication\n");
+    fprintf(f, "  disableauth        - disable proxy authentication\n");
     fprintf(f, "  setstats <seconds> - set stats refresh interval\n");
     fprintf(f, "  reload             - reload configuration and lists from disk\n");
     fprintf(f, "  resetconfig        - reset settings and lists to default values\n");
@@ -367,6 +370,8 @@ static int isClientIpAllowed(const char* ip) {
 
 static void closeClient(int index);
 
+static int isBlockedHost(const char* host);
+
 static void enforceClientIpRules(void) {
     if (!ipWhitelistEnabled && !ipBlacklistEnabled) return;
     for (int i = 0; i < clientCapacity; i++) {
@@ -375,6 +380,23 @@ static void enforceClientIpRules(void) {
             closeClient(i);
         }
     }
+}
+
+static void enforceBlockedHosts(void) {
+    for (int i = 0; i < clientCapacity; i++) {
+        if (clients[i].clientSock == INVALID_SOCKET) continue;
+        if (isBlockedHost(clients[i].requestedHost)) {
+            closeClient(i);
+        }
+    }
+}
+
+static int isBlockedHost(const char* host) {
+    if (!host || !*host) return 0;
+    for (int i = 0; i < blockedCount; i++) {
+        if (matchesBlockedEntry(host, blockedEntries[i])) return 1;
+    }
+    return 0;
 }
 
 static void saveIpList(const char* path, char** entries, int count, const char* heading) {
@@ -444,14 +466,6 @@ static void loadIpList(const char* path, char*** entriesPtr, int* countPtr, int*
     }
 }
 
-static int isBlockedHost(const char* host) {
-    if (!host || !*host) return 0;
-    for (int i = 0; i < blockedCount; i++) {
-        if (matchesBlockedEntry(host, blockedEntries[i])) return 1;
-    }
-    return 0;
-}
-
 static void loadBlockedList(void) {
     FILE* f = fopen(BLOCKED_FILE, "r");
     if (!f) {
@@ -497,6 +511,7 @@ static void saveConfig(void) {
     }
     fprintf(f, "username=%s\n", authUser);
     fprintf(f, "password=%s\n", authPass);
+    fprintf(f, "auth_enabled=%s\n", authEnabled ? "true" : "false");
     fprintf(f, "ip=%s\n", bindIp);
     fprintf(f, "port=%d\n", bindPort);
     fprintf(f, "status_reload_s=%d\n", statusReloadSec);
@@ -556,6 +571,11 @@ static void loadConfig(void) {
             if (boolValue < 0) parseError = 1;
             else ipWhitelistEnabled = boolValue;
         }
+        else if (_stricmp(key, "auth_enabled") == 0) {
+            int boolValue = parseBoolean(value);
+            if (boolValue < 0) parseError = 1;
+            else authEnabled = boolValue;
+        }
     }
     if (ferror(f)) parseError = 1;
     fclose(f);
@@ -573,6 +593,7 @@ static int reloadConfig(void) {
     int oldPort = bindPort;
     loadConfig();
     loadBlockedList();
+    enforceBlockedHosts();
     loadIpList(IP_BLACKLIST_FILE, &ipBlacklistEntries, &ipBlacklistCount, &ipBlacklistCapacity, "Client IP blacklist");
     loadIpList(IP_WHITELIST_FILE, &ipWhitelistEntries, &ipWhitelistCount, &ipWhitelistCapacity, "Client IP whitelist");
     if (_stricmp(oldIp, bindIp) != 0 || oldPort != bindPort) {
@@ -610,6 +631,7 @@ static int resetConfigToDefaults(void) {
     statusReloadSec = 10;
     ipBlacklistEnabled = 0;
     ipWhitelistEnabled = 0;
+    authEnabled = 1;
 
     SOCKET newSock = createListener(bindIp, bindPort);
     if (newSock == INVALID_SOCKET) {
@@ -946,6 +968,7 @@ static int addClient(SOCKET client, const struct sockaddr_in* addr) {
             clients[i].pendingToClientLen = 0;
             clients[i].pendingToClientPos = 0;
             setSocketNonBlocking(client);
+            logMessage("Client %s:%d connected", clients[i].clientIp, clients[i].clientPort);
             return i;
         }
     }
@@ -967,11 +990,16 @@ static int addClient(SOCKET client, const struct sockaddr_in* addr) {
     clients[index].pendingToClientLen = 0;
     clients[index].pendingToClientPos = 0;
     setSocketNonBlocking(client);
+    logMessage("Client %s:%d connected", clients[index].clientIp, clients[index].clientPort);
     return index;
 }
 
 static void closeClient(int index) {
     if (index < 0 || index >= clientCapacity) return;
+    if (clients[index].connectStartTick > 0) {
+        ULONGLONG duration = GetTickCount64() - clients[index].connectStartTick;
+        logMessage("Client %s disconnected after %llu ms, visited %s", clients[index].clientIp, duration, clients[index].requestedHost);
+    }
     if (clients[index].clientSock != INVALID_SOCKET) {
         closesocket(clients[index].clientSock);
         clients[index].clientSock = INVALID_SOCKET;
@@ -1073,7 +1101,7 @@ static void handleClientData(int index) {
         c->initialLen += received;
         c->initialBuffer[c->initialLen] = '\0';
         if (!strstr(c->initialBuffer, "\r\n\r\n")) return;
-        if (!checkProxyAuth(c->initialBuffer)) {
+        if (authEnabled && !checkProxyAuth(c->initialBuffer)) {
             const char* authFail = "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"Proxy\"\r\nContent-Length: 0\r\n\r\n";
             send(c->clientSock, authFail, (int)strlen(authFail), 0);
             closeClient(index);
@@ -1090,6 +1118,7 @@ static void handleClientData(int index) {
             return;
         }
         safeCopy(c->requestedHost, sizeof(c->requestedHost), host);
+        logMessage("Client %s requested %s", c->clientIp, host);
         if (isBlockedHost(host)) {
             const char* forbidden = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n";
             send(c->clientSock, forbidden, (int)strlen(forbidden), 0);
@@ -1197,6 +1226,7 @@ static void printStatus(void) {
     printf("=== Proxy Server ===\n");
     printf("Listening on %s:%d\n", bindIp, bindPort);
     printf("Auth user=%s password=%s\n", authUser, authPass);
+    printf("Auth enabled: %s\n", authEnabled ? "true" : "false");
     printf("Stats refresh interval: %d s\n", statusReloadSec);
     printf("IP check interval: %d s\n", ipCheckIntervalSec);
     printf("IP blacklist enabled: %s\n", ipBlacklistEnabled ? "true" : "false");
@@ -1210,7 +1240,7 @@ static void printStatus(void) {
     printf("Blocked entries: %d\n", blockedCount);
     printf("Client IP blacklist: %d entries\n", ipBlacklistCount);
     printf("Client IP whitelist: %d entries%s\n", ipWhitelistCount, ipWhitelistCount > 0 ? " (active)" : "");
-    printf("Commands: help | stats | list | clear | listblocked | addblocked <site> | rmblocked <site> | addipblack <ip> | rmipblack <ip> | listipblack | addipwhite <ip> | rmipwhite <ip> | listipwhite | enableipblack | disableipblack | enableipwhite | disableipwhite | setuser <user> | setpass <password> | setip <ip> | setport <port> | setstats <s> | setkick <s> | reload | resetconfig | exit\n");
+    printf("Commands: help | stats | list | clear | listblocked | addblocked <site> | rmblocked <site> | addipblack <ip> | rmipblack <ip> | listipblack | addipwhite <ip> | rmipwhite <ip> | listipwhite | enableipblack | disableipblack | enableipwhite | disableipwhite | enableauth | disableauth | setuser <user> | setpass <password> | setip <ip> | setport <port> | setstats <s> | setkick <s> | reload | resetconfig | exit\n");
     printf("---------------------------------------------------------------\n");
     printf("Index | IP:Port             | Ping   | Connected | Host\n");
     printf("---------------------------------------------------------------\n");
@@ -1279,6 +1309,8 @@ static void processCommand(const char* line) {
         printf("  disableipblack      - disable client IP blacklist\n");
         printf("  enableipwhite       - enable client IP whitelist\n");
         printf("  disableipwhite      - disable client IP whitelist\n");
+        printf("  enableauth           - enable proxy authentication\n");
+        printf("  disableauth          - disable proxy authentication\n");
         printf("  setuser <name>       - set proxy username\n");
         printf("  setpass <password>   - set proxy password\n");
         printf("  setip <ip>           - change bind IP\n");
@@ -1315,6 +1347,7 @@ static void processCommand(const char* line) {
         strcpy(blockedEntries[blockedCount], arg);
         blockedCount++;
         saveBlockedList();
+        enforceBlockedHosts();
         printStatusMessage("Blocked entry added: %s", arg);
         return;
     }
@@ -1486,6 +1519,18 @@ static void processCommand(const char* line) {
         printStatusMessage("IP whitelist disabled");
         return;
     }
+    if (_stricmp(cmd, "enableauth") == 0) {
+        authEnabled = 1;
+        saveConfig();
+        printStatusMessage("Authentication enabled");
+        return;
+    }
+    if (_stricmp(cmd, "disableauth") == 0) {
+        authEnabled = 0;
+        saveConfig();
+        printStatusMessage("Authentication disabled");
+        return;
+    }
     if (_stricmp(cmd, "setuser") == 0) {
         if (!arg[0]) {
             printStatusMessage("Usage: setuser <name>");
@@ -1572,6 +1617,12 @@ static void processCommand(const char* line) {
     if (_stricmp(cmd, "reload") == 0) {
         if (reloadConfig()) {
             printStatusMessage("Reload successful.");
+            // Disconnect all clients to force reconnect
+            for (int i = 0; i < clientCapacity; i++) {
+                if (clients[i].clientSock != INVALID_SOCKET) {
+                    closeClient(i);
+                }
+            }
         } else {
             printStatusMessage("Reload failed, keeping current configuration");
         }
@@ -1649,6 +1700,7 @@ int main(int argc, char* argv[]) {
     DWORD lastStatusTick = GetTickCount();
     DWORD lastHourlyClearTick = lastStatusTick;
     DWORD lastIpCheckTick = lastStatusTick;
+    DWORD lastLogTick = lastStatusTick;
     HANDLE thread = NULL;
     if (isInputInteractive()) {
         thread = CreateThread(NULL, 0, commandThread, NULL, 0, NULL);
@@ -1718,6 +1770,15 @@ int main(int argc, char* argv[]) {
             printStatus();
             fflush(stdout);
             lastStatusTick = currentTick;
+        }
+        if (statusReloadSec > 0 && currentTick - lastLogTick >= (DWORD)statusReloadSec * 1000) {
+            for (int i = 0; i < clientCapacity; i++) {
+                if (clients[i].clientSock != INVALID_SOCKET) {
+                    ULONGLONG duration = GetTickCount64() - clients[i].connectStartTick;
+                    logMessage("Active client %s:%d connected for %llu ms, last host %s", clients[i].clientIp, clients[i].clientPort, duration, clients[i].requestedHost);
+                }
+            }
+            lastLogTick = currentTick;
         }
         if (currentTick - lastHourlyClearTick >= 3600000) {
             printStatus();

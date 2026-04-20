@@ -1,0 +1,49 @@
+Proxy Server Wiki
+
+This project contains a proxy server implementation for both Windows and Linux.
+
+Files:
+- proxy.c       : Windows proxy server source
+- proxylinux.c : Linux proxy server source
+- config.ini    : main configuration file
+- ip_whitelist.txt : client IP whitelist
+- ip_blacklist.txt : client IP blacklist
+- blocked.txt   : blocked host/site list
+
+Windows build:
+- Use MSYS2 or MinGW64
+- Compile with: gcc proxy.c -o proxy.exe -static -static-libgcc -lws2_32 -liphlpapi
+- Run with: proxy.exe
+
+Linux build:
+- Use gcc on Linux or WSL
+- Compile with: gcc proxylinux.c -o proxylinux
+- Run with: ./proxylinux
+
+Configuration:
+- auth username and password are set in config.ini
+- auth_enabled=true enables authentication
+- ip_whitelist_enabled=true enables whitelist mode
+- ip_blacklist_enabled=true enables blacklist mode
+- ip_check_interval controls how often connected clients are rechecked
+
+Lists:
+- ip_whitelist.txt contains allowed client IP patterns
+- ip_blacklist.txt contains blocked client IP patterns
+- blocked.txt contains blocked websites or hostnames
+
+Commands:
+- enableipwhite / disableipwhite
+- enableipblack / disableipblack
+- enableauth / disableauth
+- setstats <seconds>
+- setkick <seconds>
+- addipwhite <ip>
+- addipblack <ip>
+- rmipwhite <ip>
+- rmipblack <ip>
+
+Notes:
+- IP matching supports wildcard patterns with '*'.
+- Use patterns like 192.*.*.*, 192.0.*.*, 192.0.0.*, 46.15.*.*.
+- Country-based filtering is not automatic; add IP ranges manually.
